@@ -22,7 +22,7 @@ Each family targets a distinct layer of the analysis process. Together, they for
 
 | Layer | Family | Role |
 |:------|:-------|:-----|
-| Strategic Context | [Trend Compass](#trend-compass) | Multi-day and multi-week trend phase, strength, and divergence detection |
+| Strategic Context | [Trend Compass](#trend-compass) | Multi-day, multi-week, and intraday structural trend phase, strength, and divergence detection |
 | Reconnaissance | [Market Monitor](#market-monitor) | Directional bias scoring for multi-chart watchlist monitoring |
 | Execution | [SPY 0DTE Scalper](#spy-0dte-scalper) | Intraday signal generation for SPY zero-days-to-expiration options |
 
@@ -32,85 +32,40 @@ All scripts are written in Pine Script v6 and run as chart overlays. Every indic
 
 ## SPY 0DTE Scalper
 
-Purpose-built for scalping SPY 0DTE options. Each timeframe variant generates explicit CALLS and PUTS signal labels using AND-gate confluence logic — all required conditions must pass simultaneously before a signal fires. Signals are gated by `barstate.isconfirmed` to prevent repainting.
+Purpose-built for scalping SPY 0DTE options. Each variant is tightly coupled to its specific timeframe, employing strict AND-gate logic across price structure, volume, momentum, and candlestick patterns to filter out low-probability setups.
 
-Core components shared across all variants:
-
-- **EMA Ribbon** with dynamic cloud fill for trend structure
-- **Session VWAP** with standard deviation bands
-- **TTM Squeeze** detection (Bollinger Band compression inside Keltner Channels)
-- **NYSE TICK Index** integration with six-tier breadth classification
-- **Session levels** — Pre-Market High/Low, Opening Range, Session HOD/LOD
-- **Prior Day VWAP** as an institutional reference level
-- **Regime classifier** — BULLISH, BEARISH, RANGING, NO TRADE, TRANSITION
-- **Signal filters** — time window, cooldown, bar confirmation, ADX gate, VWAP extension, optional squeeze and TICK filters
-
-### Variants
-
-| Timeframe | Script | Documentation | Hold Duration | Signals per Session |
-|:----------|:-------|:--------------|:--------------|:--------------------|
-| 1-minute | [spy_0dte_scalper_1min.pine](spy_0dte_scalper/spy_0dte_scalper_1min.pine) | [docs](docs/spy_0dte_scalper_1min.md) | 1 -- 5 min | Highest frequency |
-| 5-minute | [spy_0dte_scalper_5min.pine](spy_0dte_scalper/spy_0dte_scalper_5min.pine) | [docs](docs/spy_0dte_scalper_5min.md) | 5 -- 25 min | Moderate frequency |
-| 15-minute | [spy_0dte_scalper_15min.pine](spy_0dte_scalper/spy_0dte_scalper_15min.pine) | [docs](docs/spy_0dte_scalper_15min.md) | 15 -- 60 min | Highest conviction |
-
-The 1-minute variant uses a strict AND-gate engine requiring all five core conditions. The 5-minute and 15-minute variants use a weighted scoring system that allows partial confluence while still requiring minimum thresholds, and add session phase detection (Open Drive, Morning, Midday, Power Hour, Close) with bias trend tracking.
+| Variant | Script | Docs | Base Signal | Key Filters | Target Environment |
+|:--------|:-------|:-----|:------------|:------------|:-------------------|
+| **1-Minute** | `spy_0dte_scalper_1min.pine` | `spy_0dte_scalper_1min.md` | 9/21 EMA Cross | VWAP, RSI, Engulfing/Pinbar | High-frequency momentum scalping |
+| **5-Minute** | `spy_0dte_scalper_5min.pine` | `spy_0dte_scalper_5min.md` | MACD Cross | VWAP, RSI, 9/21 EMA | Standard intraday trend following |
+| **15-Minute** | `spy_0dte_scalper_15min.pine` | `spy_0dte_scalper_15min.md` | MACD Cross | VWAP, RSI, 9/21 EMA | Session-level structural swings |
 
 ---
 
 ## Market Monitor
 
-Lightweight directional-bias overlays designed for multi-chart watchlist monitoring across 6-8 simultaneous charts. These indicators produce no signal labels — they exist purely to communicate trend context, momentum state, and directional bias at a glance.
+Designed for multi-chart grid layouts (e.g., 6-8 charts per screen). The Market Monitor replaces cluttered signal arrows with a clean, glanceable directional bias score, allowing you to quickly assess the market breadth and structural alignment of your entire watchlist.
 
-Core components shared across both variants:
-
-- **EMA Ribbon** (9/21/50) with trend cloud fill
-- **Session VWAP** with configurable standard deviation bands
-- **RSI and ADX** momentum engine
-- **ATR** volatility measurement with regime classification
-- **Relative volume** gauge
-- **Higher timeframe EMA** confirmation layer
-- **Previous Day High/Low/Close** reference levels
-- **Compact dashboard** optimized for small chart tiles
-
-### Variants
-
-| Timeframe | Script | Documentation | Bias Score Range | Key Additions |
-|:----------|:-------|:--------------|:-----------------|:--------------|
-| Adaptive (1m -- Daily) | [market_monitor_1min.pine](market_monitor/market_monitor_1min.pine) | [docs](docs/market_monitor_1min.md) | -5 to +5 | Binary scoring, minimal object count for 8+ instances |
-| 5-minute | [market_monitor_5min.pine](market_monitor/market_monitor_5min.pine) | [docs](docs/market_monitor_5min.md) | -11 to +11 | Weighted scoring, session phases, TICK, TTM Squeeze, Opening Range |
-
-The 1-minute variant uses a simple binary scoring system where five conditions each contribute +/-1 point. The 5-minute variant introduces weighted scoring (structural conditions at 2x, confirmation conditions at 1x), NYSE TICK integration, TTM Squeeze detection, session HOD/LOD tracking, Opening Range levels, and bias trend tracking (IMPROVING / STABLE / FADING).
+| Variant | Script | Docs | Anchor | Session Tracking | Unique Features |
+|:--------|:-------|:-----|:-------|:-----------------|:----------------|
+| **1-Minute** | `market_monitor_1min.pine` | `market_monitor_1min.md` | Session VWAP | N/A | Lightweight, adaptive, equal-weight scoring |
+| **5-Minute** | `market_monitor_5min.pine` | `market_monitor_5min.md` | 15m EMA | 5m Phase Intervals | TTM Squeeze, TICK, Weighted Scoring (-11 to +11) |
+| **15-Minute** | `market_monitor_15min.pine` | `market_monitor_15min.md` | 1H EMA | 15m Phase Intervals | TTM Squeeze, TICK, Session-level stability bias |
 
 ---
 
 ## Trend Compass
 
-Strategic trend assessment overlays for equities, ETFs, and indices. Ticker-agnostic by design — these work on any liquid instrument. No signal generation. Pure trend context answering: What is the trend? How strong is it? Accelerating or exhausting? Are divergences forming? Where is price relative to institutional structure?
+The strategic context layer. Evaluates the lifecycle of a trend (Emerging → Accelerating → Mature → Exhausting → Consolidating → Reversing) while plotting institutional-grade higher-timeframe reference levels directly on the local chart.
 
-Core components shared across all variants:
+| Variant | Script | Docs | HTF References | Divergence Config | Cadence |
+|:--------|:-------|:-----|:---------------|:------------------|:--------|
+| **Daily** | `trend_compass_daily.pine` | `trend_compass_daily.md` | Weekly 50, Prior M/W H/L/C | 5L/5R pivots, 60-bar decay | 1 bar per session |
+| **4-Hour** | `trend_compass_4h.pine` | `trend_compass_4h.md` | Daily 50, Daily 200, Weekly 50 | 4L/2R pivots, 20-bar decay | ~2 bars per session |
+| **1-Hour** | `trend_compass_1h.pine` | `trend_compass_1h.md` | 4H 50, Daily 50, Daily 200, Weekly 50 | 3L/2R pivots, 30-bar decay | ~6.5 bars per session |
+| **15-Minute** | `trend_compass_15m.pine` | `trend_compass_15m.md` | 1H 50, 4H 50, Daily 50, Daily 200 | 3L/2R pivots, 40-bar decay | 26 bars per session |
 
-- **EMA Ribbon** (10/21/50) with 200 EMA anchor as the institutional dividing line
-- **Trend phase classifier** with six states — EMERGING, ACCELERATING, MATURE, EXHAUSTING, CONSOLIDATING, REVERSING
-- **Composite weighted trend score** (-11 to +11) from eight conditions across structural (2x weight) and confirmation (1x weight) tiers
-- **Score trend tracking** — IMPROVING, STABLE, FADING via smoothed comparison
-- **RSI divergence detection** — bullish, bearish, hidden bullish, hidden bearish with visual line segments on the chart
-- **MACD divergence detection** with four states and dotted line visualization
-- **ADX slope analysis** — RISING, FLAT, FALLING
-- **OBV trend confirmation** — CONFIRMING, DIVERGING, NEUTRAL
-- **ATR percentile ranking** and **Bollinger Band width percentile** for volatility context
-- **52-week High/Low** with position-in-range percentage
-- **Prior period High/Low/Close** reference levels
-- **Optional modules** — Fibonacci retracement and Ichimoku Cloud (togglable)
-
-### Variants
-
-| Timeframe | Script | Documentation | HTF Anchors | Divergence Sensitivity | Update Frequency |
-|:----------|:-------|:--------------|:------------|:-----------------------|:-----------------|
-| Daily | [trend_compass_daily.pine](trend_compass/trend_compass_daily.pine) | [docs](docs/trend_compass_daily.md) | Weekly 50 EMA | 5L/3R pivots, 15-bar decay | 1 bar per session |
-| 4-hour | [trend_compass_4h.pine](trend_compass/trend_compass_4h.pine) | [docs](docs/trend_compass_4h.md) | Daily 50, Daily 200, Weekly 50 | 4L/2R pivots, 20-bar decay | ~2 bars per session |
-| 1-hour | [trend_compass_1h.pine](trend_compass/trend_compass_1h.pine) | [docs](docs/trend_compass_1h.md) | 4H 50, Daily 50, Daily 200, Weekly 50 | 3L/2R pivots, 30-bar decay | ~6.5 bars per session |
-
-Each variant is calibrated for its timeframe: compression thresholds, EMA slope sensitivity, crossover windows, and divergence pivot parameters all scale appropriately. The 1-hour variant provides the fastest divergence feedback and intraday trend assessment. The Daily variant provides the broadest structural picture with the least noise.
+Each variant is calibrated for its timeframe: compression thresholds, EMA slope sensitivity, crossover windows, and divergence pivot parameters all scale appropriately. The 15-minute and 1-hour variants provide the fastest divergence feedback and intraday trend assessment, while the Daily variant provides the broadest structural picture with the least noise.
 
 ---
 
