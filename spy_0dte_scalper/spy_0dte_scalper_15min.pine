@@ -965,7 +965,7 @@ plotshape(i_showVwapCross and vwapCrossDown and barConfirmed, title="VWAP Cross 
 // DASHBOARD TABLE
 // ============================================================================
 
-var table dash = table.new(position.top_right, 3, 26,
+var table dash = table.new(position.bottom_right, 3, 26,
      bgcolor    = C_DASH_BG,
      border_width = 0,
      border_color = color.new(#FFFFFF, 85),

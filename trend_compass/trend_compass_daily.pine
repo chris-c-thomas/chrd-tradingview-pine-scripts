@@ -167,7 +167,7 @@ bool   i_useWeighted = input.bool(true, "Use Weighted Scoring",       group=GP_S
 
 // --- Dashboard ---
 bool   i_showDash    = input.bool(true,  "Show Dashboard",            group=GP_DASH)
-string i_dashPos     = input.string("Top Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=GP_DASH)
+string i_dashPos     = input.string("Bottom Right", "Position", options=["Top Right", "Top Left", "Bottom Right", "Bottom Left"], group=GP_DASH)
 string i_dashSize    = input.string("Small", "Size", options=["Tiny", "Small", "Normal", "Large"], group=GP_DASH)
 
 // ============================================================================
