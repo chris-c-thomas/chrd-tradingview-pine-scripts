@@ -4,6 +4,27 @@ All notable changes to this project are documented in this file.
 
 ---
 
+## (2026-03-02) -- Alert System Fix (All Trend Compass Variants)
+
+- Fixed Pine Script v6 string handling errors in the Alerts section across Daily, 4H, and 1H variants.
+- Replaced invalid `nz()` usage on string series (`trendPhase`, `atrRegime`) with proper `na()` guards to prevent compilation failures.
+- Refactored all `alertcondition()` message arguments to use compile-time constant strings (required by Pine v6).
+- Removed dynamic string concatenation from alert messages (phase names, ATR regime values, BB percentile values), which Pine does not allow inside `alertcondition()`.
+
+**Technical details**:
+
+- `string prevPhase = na(trendPhase[1]) ? "CONSOLIDATING" : trendPhase[1]`
+- `string prevAtrRegime = na(atrRegime[1]) ? "NORMAL" : atrRegime[1]`
+- All alert messages now use static templates with `{{ticker}}` and `{{interval}}` placeholders only.
+
+**Impact**:
+
+- Restores full compilation compatibility in Pine v6.
+- Prevents runtime alert creation failures in TradingView.
+- No changes to scoring, calculations, visuals, or alert logic conditions — message text only.
+
+---
+
 ## (2026-03-02) -- Trend Compass 1H
 
 - New 1-Hour variant of the Trend Compass family, bridging the gap between intraday Market Monitors and the 4-Hour Trend Compass.
