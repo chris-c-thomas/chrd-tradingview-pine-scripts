@@ -12,7 +12,7 @@ All notable changes to this project are documented in this file.
 
 ---
 
-## v1.0 (2026-02-27) -- Trend Compass Daily + 4H
+## (2026-02-27) -- Trend Compass Daily + 4H
 
 - New strategic trend assessment indicator family for multi-day/multi-week trend evaluation on any equity, ETF, or index.
 - Ticker-agnostic design: no hardcoded symbols, no session-specific logic. Works on NVDA, AAPL, GOOGL, SPY, QQQ, IWM, or any liquid instrument.
@@ -58,7 +58,7 @@ All notable changes to this project are documented in this file.
 
 ---
 
-## v1.0 (2026-02-27) -- Market Monitor 5m
+## (2026-02-27) -- Market Monitor 5m
 
 - New 5-minute optimized Market Monitor variant with weighted directional bias scoring.
 - Weighted scoring engine: structural conditions (EMA alignment, VWAP position, Anchor EMA) score 2x; confirmation conditions (RSI, DI, HTF, TICK, Squeeze momentum) score 1x. Configurable toggle between weighted and equal modes.
@@ -78,7 +78,7 @@ All notable changes to this project are documented in this file.
 
 ---
 
-## v1.0 (2026-02-24) -- Market Monitor 1m
+## (2026-02-24) -- Market Monitor 1m
 
 - General-purpose directional-bias overlay for multi-chart watchlist monitoring (6-8 charts per window).
 - Timeframe-adaptive design: works from 1-minute through Daily without reconfiguration. VWAP auto-disables on Daily+ charts; bias engine swaps price anchor from VWAP to slow EMA accordingly.
@@ -96,7 +96,7 @@ All notable changes to this project are documented in this file.
 
 ---
 
-## v1.1 (2026-02-20) -- All Scalper Variants
+## (2026-02-20) -- All Scalper Variants
 
 - TTM Squeeze detection with three-state classification and momentum histogram.
 - NYSE TICK Index integration with six-tier breadth classification.
@@ -112,7 +112,7 @@ All notable changes to this project are documented in this file.
 
 ---
 
-## v1.0 (2026-02-18) -- Initial Release
+## (2026-02-18) -- Initial Release
 
 - EMA Ribbon with dynamic cloud fill.
 - Session-anchored VWAP with standard deviation bands.
