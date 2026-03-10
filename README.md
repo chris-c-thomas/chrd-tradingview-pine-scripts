@@ -32,13 +32,13 @@ All scripts are written in Pine Script v6 and run as chart overlays. Every indic
 
 ## SPY 0DTE Scalper
 
-Purpose-built for scalping SPY 0DTE options. Each variant is tightly coupled to its specific timeframe, employing strict AND-gate logic across price structure, volume, momentum, and candlestick patterns to filter out low-probability setups.
+Purpose-built for scalping SPY 0DTE options. Each variant is tightly coupled to its specific timeframe, employing strict AND-gate logic across price structure, volume, momentum, and candlestick patterns to filter out low-probability setups. All three variants integrate volume footprint data via `request.footprint()` (Premium/Ultimate plan required) for intrabar order flow visibility — POC levels, delta classification, and buy/sell volume displayed in the dashboard.
 
 | Variant | Script | Docs | Base Signal | Key Filters | Target Environment |
 |:--------|:-------|:-----|:------------|:------------|:-------------------|
-| **1-Minute** | [`spy_0dte_scalper_1min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_1min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_1min.md) | 9/21 EMA Cross | VWAP, RSI, Engulfing/Pinbar | High-frequency momentum scalping |
-| **5-Minute** | [`spy_0dte_scalper_5min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_5min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_5min.md) | MACD Cross | VWAP, RSI, 9/21 EMA | Standard intraday trend following |
-| **15-Minute** | [`spy_0dte_scalper_15min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_15min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_15min.md) | MACD Cross | VWAP, RSI, 9/21 EMA | Session-level structural swings |
+| **1-Minute** | [`spy_0dte_scalper_1min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_1min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_1min.md) | 9/21 EMA Cross | VWAP, RSI, Engulfing/Pinbar, Footprint (info) | High-frequency momentum scalping |
+| **5-Minute** | [`spy_0dte_scalper_5min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_5min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_5min.md) | MACD Cross | VWAP, RSI, 9/21 EMA, Footprint (opt-in) | Standard intraday trend following |
+| **15-Minute** | [`spy_0dte_scalper_15min.pine`](scripts/spy_0dte_scalper/spy_0dte_scalper_15min.pine) | [docs](docs/spy_0dte_scalper/spy_0dte_scalper_15min.md) | MACD Cross | VWAP, RSI, 9/21 EMA, Footprint+POC | Session-level structural swings |
 
 ---
 
