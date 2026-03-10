@@ -71,6 +71,14 @@ var color C_GRAY         = #616161
 var color C_NEUTRAL      = #B0BEC5
 var color C_CYAN         = #40C4FF
 
+// Footprint colors
+var string GP_FOOTPRINT  = "Volume Footprint"
+var color  C_FP_POC      = #E040FB
+var color  C_FP_VAH      = color.new(#E040FB, 40)
+var color  C_FP_VAL      = color.new(#E040FB, 40)
+var color  C_FP_DELTA_P  = #00E676
+var color  C_FP_DELTA_N  = #FF1744
+
 // ============================================================================
 // INPUTS
 // ============================================================================
@@ -143,8 +151,8 @@ i_showVwapCross  = input.bool(true,  "Show VWAP Cross Markers",           group=
 i_vwapExtFilter  = input.float(2.5,  "Max VWAP Distance (ATR multiples)", minval=0.5, maxval=5.0, step=0.25, group=GP_SIGNALS)
 i_useWeighted    = input.bool(true,  "Use Weighted Scoring",              group=GP_SIGNALS,
                      tooltip="When ON, structural conditions (VWAP, EMA, Anchor EMA) score 2 points each. Confirmation conditions score 1. Max score: 14 (weighted) vs 12 (equal).")
-i_minScore       = input.int(7,      "Minimum Signal Score",              minval=2, maxval=15, group=GP_SIGNALS,
-                     tooltip="Weighted max: 15 (3 structural x2 + 9 confirmation x1). Equal max: 12. Default 7 = all core conditions in weighted mode.")
+i_minScore       = input.int(7,      "Minimum Signal Score",              minval=2, maxval=16, group=GP_SIGNALS,
+                     tooltip="Weighted max: 16 (3 structural x2 + 10 confirmation x1 with FP). Equal max: 13. Default 7 = all structural + 1 confirmation in weighted mode.")
 
 // --- Multi-Timeframe ---
 i_useMTF        = input.bool(true,  "Enable 5-Min MTF Confirmation",     group=GP_MTF,
@@ -157,6 +165,21 @@ i_mtfEmaSlow    = input.int(21,     "5-Min Slow EMA Length",             minval=
 i_useDivergence = input.bool(true,  "Enable RSI Divergence Detection",   group=GP_DIV,
                      tooltip="Detects classic bullish/bearish RSI divergence over a configurable lookback window. On 15-min, 5 bars = 1.25 hrs of price action.")
 i_divLookback   = input.int(5,      "Divergence Lookback (bars)",        minval=3, maxval=10, group=GP_DIV)
+
+// --- Volume Footprint ---
+i_useFootprint   = input.bool(true,   "Enable Volume Footprint",              group=GP_FOOTPRINT,
+                     tooltip="Requests volume footprint data for the current bar. Requires TradingView Premium or Ultimate plan. NOTE: Footprint data repaints by design — real-time intrabar resolution (1-tick) differs from historical recalculation (1-second or coarser).")
+i_fpTicksPerRow  = input.int(25,      "Ticks Per Footprint Row",              minval=1, maxval=500, group=GP_FOOTPRINT,
+                     tooltip="Price ticks per footprint row. SPY ($0.01 mintick): 25 = $0.25/row. On 15-min bars with typical $0.50-$2.00 ranges, this gives 2-8 rows for meaningful POC/VA resolution.")
+i_fpVaPct        = input.int(70,      "Value Area Percentage",                minval=50, maxval=95, step=5, group=GP_FOOTPRINT)
+i_fpShowPOC      = input.bool(true,   "Show POC Level",                       group=GP_FOOTPRINT,
+                     tooltip="Plots the Point of Control (highest-volume price) as a step line.")
+i_fpShowVA       = input.bool(false,  "Show Value Area (VAH/VAL)",            group=GP_FOOTPRINT,
+                     tooltip="Plots the Value Area High and Low boundaries. Off by default to reduce visual clutter.")
+i_fpUseScoring   = input.bool(true,   "Use Delta in Scoring (1x confirm)",    group=GP_FOOTPRINT,
+                     tooltip="Adds footprint delta as a 1x confirmation condition in the weighted scoring engine. Positive delta = +1 for CALLS, negative = +1 for PUTS. This is a REPAINTING condition. At 1x weight, a +-1 point shift from recalculation is within the scoring engine's noise floor.")
+i_fpUsePOCLevel  = input.bool(true,   "Include POC in Level Proximity",       group=GP_FOOTPRINT,
+                     tooltip="Adds the prior bar's POC to the support/resistance proximity pool. Uses [1] offset to reduce repainting.")
 
 // --- Directional Bias Background ---
 i_showBiasBG    = input.bool(false, "Show Directional Bias Background",  group=GP_BIAS,
@@ -389,6 +412,78 @@ float tickSmooth = i_useTick ? request.security(i_tickSymbol, "1", ta.sma(close,
 float tickValue = tickSmooth
 
 // ============================================================================
+// VOLUME FOOTPRINT DATA
+// ============================================================================
+// Full integration: scoring, level proximity, dashboard, POC/VA plots.
+// request.footprint() counts toward the 40-call request.*() budget (+1 call).
+
+footprint fpData = i_useFootprint ? request.footprint(i_fpTicksPerRow, i_fpVaPct) : na
+
+// Bar-level metrics
+float fpBuyVol   = not na(fpData) ? fpData.buy_volume()  : na
+float fpSellVol  = not na(fpData) ? fpData.sell_volume()  : na
+float fpDelta    = not na(fpData) ? fpData.delta()        : na
+
+// POC midpoint price
+float fpPocPrice = na
+if not na(fpData)
+    volume_row pocRow = fpData.poc()
+    if not na(pocRow)
+        fpPocPrice := (pocRow.up_price() + pocRow.down_price()) / 2.0
+
+// Value Area boundaries
+float fpVahPrice = na
+float fpValPrice = na
+if not na(fpData)
+    volume_row vahRow = fpData.vah()
+    volume_row valRow = fpData.val()
+    if not na(vahRow)
+        fpVahPrice := (vahRow.up_price() + vahRow.down_price()) / 2.0
+    if not na(valRow)
+        fpValPrice := (valRow.up_price() + valRow.down_price()) / 2.0
+
+// Derived metrics
+float fpTotalVol = nz(fpBuyVol) + nz(fpSellVol)
+float fpDeltaPct = fpTotalVol > 0 ? (fpDelta / fpTotalVol) * 100.0 : na
+bool  fpAvailable = not na(fpData)
+
+// Cumulative session delta (resets at RTH open — must be placed after rthStart is defined)
+// Note: rthStart is defined later, so we use a var that will be updated in the session section
+var float fpCumDelta = 0.0
+
+// Prior bar's POC for level proximity (using [1] offset to avoid current-bar repainting)
+float fpPriorPOC = fpPocPrice[1]
+
+// Delta strength classification
+fpDeltaLabel() =>
+    if na(fpDelta)
+        "N/A"
+    else if math.abs(nz(fpDeltaPct)) > 40
+        fpDelta > 0 ? "STRONG BUY" : "STRONG SELL"
+    else if math.abs(nz(fpDeltaPct)) > 20
+        fpDelta > 0 ? "BUY LEAN" : "SELL LEAN"
+    else
+        "BALANCED"
+
+fpDeltaColor() =>
+    if na(fpDelta)
+        C_GRAY
+    else if math.abs(nz(fpDeltaPct)) > 40
+        fpDelta > 0 ? C_FP_DELTA_P : C_FP_DELTA_N
+    else if math.abs(nz(fpDeltaPct)) > 20
+        fpDelta > 0 ? color.new(C_FP_DELTA_P, 30) : color.new(C_FP_DELTA_N, 30)
+    else
+        C_NEUTRAL
+
+fpCumDeltaLabel() =>
+    if fpCumDelta > 0
+        "NET BUY"
+    else if fpCumDelta < 0
+        "NET SELL"
+    else
+        "FLAT"
+
+// ============================================================================
 // MULTI-TIMEFRAME (5-MIN) DATA
 // ============================================================================
 
@@ -517,6 +612,12 @@ else if isRTH
     sessionHigh := math.max(nz(sessionHigh, high), high)
     sessionLow  := math.min(nz(sessionLow, low), low)
 
+// --- Cumulative Footprint Delta ---
+if rthStart
+    fpCumDelta := 0.0
+if not na(fpDelta) and isRTH
+    fpCumDelta += fpDelta
+
 // ============================================================================
 // REGIME / MODE ENGINE
 // ============================================================================
@@ -597,13 +698,15 @@ bool nearSupport    = (not na(pmLow)  and math.abs(close - pmLow)  < atrValue * 
                       (not na(orLow)  and orComplete and math.abs(close - orLow)  < atrValue * 1.5) or
                       (not na(pdLow)  and math.abs(close - pdLow)  < atrValue * 1.5) or
                       (not na(sessionLow) and math.abs(close - sessionLow) < atrValue * 1.5) or
-                      (not na(pdVwap) and close > pdVwap and math.abs(close - pdVwap) < atrValue * 1.5)
+                      (not na(pdVwap) and close > pdVwap and math.abs(close - pdVwap) < atrValue * 1.5) or
+                      (i_useFootprint and i_fpUsePOCLevel and not na(fpPriorPOC) and close > fpPriorPOC and (close - fpPriorPOC) < atrValue * 1.5)
 
 bool nearResistance = (not na(pmHigh) and math.abs(close - pmHigh) < atrValue * 1.5) or
                       (not na(orHigh) and orComplete and math.abs(close - orHigh) < atrValue * 1.5) or
                       (not na(pdHigh) and math.abs(close - pdHigh) < atrValue * 1.5) or
                       (not na(sessionHigh) and math.abs(close - sessionHigh) < atrValue * 1.5) or
-                      (not na(pdVwap) and close < pdVwap and math.abs(close - pdVwap) < atrValue * 1.5)
+                      (not na(pdVwap) and close < pdVwap and math.abs(close - pdVwap) < atrValue * 1.5) or
+                      (i_useFootprint and i_fpUsePOCLevel and not na(fpPriorPOC) and close < fpPriorPOC and (fpPriorPOC - close) < atrValue * 1.5)
 
 // --- Weight helpers ---
 int wStructural = i_useWeighted ? 2 : 1
@@ -611,8 +714,9 @@ int wConfirm    = 1
 
 // --- Maximum score calculation for display ---
 // Structural (2x): VWAP, EMA, Anchor = 3 conditions x wStructural
-// Confirmation (1x): RSI, Candle, ADX, MTF trend, MTF MACD, Level, Squeeze, TICK, Divergence = 9 conditions x 1
-int maxScore = 3 * wStructural + 9 * wConfirm
+// Confirmation (1x): RSI, Candle, ADX, MTF trend, MTF MACD, Level, Squeeze, TICK, Divergence = 9 base + FP delta
+int fpConfirmCount = (i_useFootprint and i_fpUseScoring) ? 1 : 0
+int maxScore = 3 * wStructural + (9 + fpConfirmCount) * wConfirm
 
 // --- CALLS (bullish entry) scoring ---
 bool callsGate    = barConfirmed and inSignalWindow and adxFilter and not vwapExtended and barsSinceSignal >= i_cooldownBars
@@ -660,6 +764,11 @@ if callsSqzOk
 if callsTickOk
     callsScore += wConfirm
 if callsDivOk
+    callsScore += wConfirm
+
+// Footprint delta (1x confirmation, repainting — documented and toggleable)
+bool callsFpDeltaOk = i_useFootprint and i_fpUseScoring and not na(fpDelta) and fpDelta > 0
+if callsFpDeltaOk
     callsScore += wConfirm
 
 bool callsSignal = callsGate and callsScore >= i_minScore
@@ -710,6 +819,11 @@ if putsSqzOk
 if putsTickOk
     putsScore += wConfirm
 if putsDivOk
+    putsScore += wConfirm
+
+// Footprint delta (1x confirmation, repainting — documented and toggleable)
+bool putsFpDeltaOk = i_useFootprint and i_fpUseScoring and not na(fpDelta) and fpDelta < 0
+if putsFpDeltaOk
     putsScore += wConfirm
 
 bool putsSignal = putsGate and putsScore >= i_minScore
@@ -776,6 +890,11 @@ fill(pFast, pSlow, color=i_showEmaCloud ? emaCloudColor : color.new(color.white,
 plot(i_showVwap     ? vwapValue : na, "VWAP",       C_VWAP,      linewidth=2)
 plot(i_showVwapBands ? vwapUpper : na, "VWAP +1 SD", C_VWAP_BAND, linewidth=1, style=plot.style_circles)
 plot(i_showVwapBands ? vwapLower : na, "VWAP -1 SD", C_VWAP_BAND, linewidth=1, style=plot.style_circles)
+
+// --- Footprint Volume Levels ---
+plot(i_useFootprint and i_fpShowPOC ? fpPocPrice : na, "FP POC", C_FP_POC, linewidth=2, style=plot.style_stepline)
+plot(i_useFootprint and i_fpShowVA  ? fpVahPrice : na, "FP VAH", C_FP_VAH, linewidth=1, style=plot.style_stepline)
+plot(i_useFootprint and i_fpShowVA  ? fpValPrice : na, "FP VAL", C_FP_VAL, linewidth=1, style=plot.style_stepline)
 
 // ============================================================================
 // KEY LEVELS — HORIZONTAL LINES WITH LABELS
@@ -964,7 +1083,7 @@ plotshape(i_showVwapCross and vwapCrossDown and barConfirmed, title="VWAP Cross 
 // DASHBOARD TABLE
 // ============================================================================
 
-var table dash = table.new(position.bottom_right, 3, 26,
+var table dash = table.new(position.bottom_right, 3, 31,
      bgcolor    = C_DASH_BG,
      border_width = 0,
      border_color = color.new(#FFFFFF, 85),
@@ -1213,6 +1332,64 @@ if barstate.islast and i_showDash
     table.cell(dash, 1, 25, barPctStr,   text_color=barPctClr,   text_size=cellSize, text_halign=text.align_right)
     table.cell(dash, 2, 25, barPctLbl,   text_color=barPctClr,   text_size=cellSize, text_halign=text.align_right)
 
+    // --- Row 26: Footprint Status ---
+    if i_useFootprint
+        string fpStat = fpAvailable ? "ACTIVE" + (i_fpUseScoring ? " | SCORING" : " | INFO") : "N/A"
+        table.cell(dash, 0, 26, "FP Status", text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 26, fpStat,      text_color=fpAvailable ? C_GREEN : C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 26, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 26, "FP Status", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 26, "OFF",       text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 26, "",           text_size=cellSize)
+
+    // --- Row 27: Footprint Delta ---
+    if i_useFootprint and fpAvailable
+        string fpDStr = fpDeltaLabel() + " | " + str.tostring(math.round(nz(fpDelta))) + " (" + f2(nz(fpDeltaPct)) + "%)"
+        table.cell(dash, 0, 27, "FP Delta",  text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 27, fpDStr,      text_color=fpDeltaColor(), text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 27, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 27, "FP Delta",  text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 27, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 27, "",           text_size=cellSize)
+
+    // --- Row 28: Footprint Buy/Sell ---
+    if i_useFootprint and not na(fpBuyVol)
+        string bsStr = str.tostring(fpBuyVol, format.volume) + " / " + str.tostring(fpSellVol, format.volume)
+        color bsClr  = fpBuyVol > fpSellVol ? C_FP_DELTA_P : C_FP_DELTA_N
+        table.cell(dash, 0, 28, "FP Buy/Sell", text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 28, bsStr,         text_color=bsClr,       text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 28, "",             text_size=cellSize)
+    else
+        table.cell(dash, 0, 28, "FP Buy/Sell", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 28, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 28, "",             text_size=cellSize)
+
+    // --- Row 29: Footprint POC ---
+    if i_useFootprint and not na(fpPocPrice)
+        float pocDist = close - fpPocPrice
+        string pocStr = f2(fpPocPrice) + " (" + (pocDist >= 0 ? "+" : "") + f2(pocDist) + ")"
+        table.cell(dash, 0, 29, "FP POC",    text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 29, pocStr,       text_color=C_FP_POC,   text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 29, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 29, "FP POC",    text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 29, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 29, "",           text_size=cellSize)
+
+    // --- Row 30: Cumulative Session Delta ---
+    if i_useFootprint and fpAvailable
+        string cumStr = str.tostring(fpCumDelta, format.volume) + " " + fpCumDeltaLabel()
+        color cumClr  = fpCumDelta > 0 ? C_FP_DELTA_P : fpCumDelta < 0 ? C_FP_DELTA_N : C_NEUTRAL
+        table.cell(dash, 0, 30, "FP Cum D",  text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 30, cumStr,       text_color=cumClr,      text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 30, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 30, "FP Cum D",  text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 30, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 30, "",           text_size=cellSize)
+
 // ============================================================================
 // ALERTS — STANDARD (alertcondition) + DYNAMIC (alert)
 // ============================================================================
@@ -1238,6 +1415,7 @@ if callsSignal
     string sqzCtx  = i_useSqueeze ? " | Sqz: " + (squeezeOn ? "ON" : "OFF") : ""
     string tickCtx = i_useTick and not na(tickRaw) ? " | TICK: " + str.tostring(math.round(tickRaw)) + " (s:" + str.tostring(math.round(nz(tickSmooth))) + ")" : ""
     string divCtx  = i_useDivergence and bullDiv ? " | RSI DIV: BULL" : ""
+    string fpCtx   = i_useFootprint and not na(fpDelta) ? " | FP: " + fpDeltaLabel() + " (d:" + str.tostring(math.round(fpDelta)) + " cum:" + str.tostring(math.round(fpCumDelta)) + ")" + (not na(fpPocPrice) ? " POC:" + f2(fpPocPrice) : "") : ""
     alert("0DTE-15m CALLS | SPY " + f2(close) +
          " | Score " + str.tostring(callsScore) + "/" + str.tostring(maxScore) + " (" + wMode + ")" +
          " | RSI " + f2(rsiValue) +
@@ -1247,7 +1425,7 @@ if callsSignal
          " | Anchor: " + (aboveAnchor ? "ABOVE" : belowAnchor ? "BELOW" : "NEUTRAL") +
          " | Vol: " + getAtrRegimeLabel() +
          (i_useMTF ? " | 5m: " + getMtfTrendLabel() + " | MACD: " + getMtfMacdLabel() : "") +
-         sqzCtx + tickCtx + divCtx,
+         sqzCtx + tickCtx + divCtx + fpCtx,
          alert.freq_once_per_bar_close)
 
 if putsSignal
@@ -1255,6 +1433,7 @@ if putsSignal
     string sqzCtx  = i_useSqueeze ? " | Sqz: " + (squeezeOn ? "ON" : "OFF") : ""
     string tickCtx = i_useTick and not na(tickRaw) ? " | TICK: " + str.tostring(math.round(tickRaw)) + " (s:" + str.tostring(math.round(nz(tickSmooth))) + ")" : ""
     string divCtx  = i_useDivergence and bearDiv ? " | RSI DIV: BEAR" : ""
+    string fpCtx   = i_useFootprint and not na(fpDelta) ? " | FP: " + fpDeltaLabel() + " (d:" + str.tostring(math.round(fpDelta)) + " cum:" + str.tostring(math.round(fpCumDelta)) + ")" + (not na(fpPocPrice) ? " POC:" + f2(fpPocPrice) : "") : ""
     alert("0DTE-15m PUTS | SPY " + f2(close) +
          " | Score " + str.tostring(putsScore) + "/" + str.tostring(maxScore) + " (" + wMode + ")" +
          " | RSI " + f2(rsiValue) +
@@ -1264,7 +1443,7 @@ if putsSignal
          " | Anchor: " + (aboveAnchor ? "ABOVE" : belowAnchor ? "BELOW" : "NEUTRAL") +
          " | Vol: " + getAtrRegimeLabel() +
          (i_useMTF ? " | 5m: " + getMtfTrendLabel() + " | MACD: " + getMtfMacdLabel() : "") +
-         sqzCtx + tickCtx + divCtx,
+         sqzCtx + tickCtx + divCtx + fpCtx,
          alert.freq_once_per_bar_close)
 
 if currentMode != currentMode[1]
@@ -1285,6 +1464,24 @@ if i_useDivergence and (bullDiv or bearDiv)
          " | RSI " + f2(rsiValue) +
          " | Mode: " + currentMode,
          alert.freq_once_per_bar_close)
+
+// Footprint alert conditions
+alertcondition(
+     i_useFootprint and not na(fpDelta) and fpDelta > 0 and nz(fpDeltaPct) > 30,
+     title="0DTE-15m: Strong Positive FP Delta (>30%)",
+     message="SPY 15m: Strong positive footprint delta — aggressive buying dominant")
+alertcondition(
+     i_useFootprint and not na(fpDelta) and fpDelta < 0 and nz(fpDeltaPct) < -30,
+     title="0DTE-15m: Strong Negative FP Delta (>30%)",
+     message="SPY 15m: Strong negative footprint delta — aggressive selling dominant")
+alertcondition(
+     i_useFootprint and not na(fpDelta) and ta.crossover(fpCumDelta, 0.0),
+     title="0DTE-15m: Cum Delta Crossed Positive",
+     message="SPY 15m: Session cumulative footprint delta crossed above zero — net buyers gaining control")
+alertcondition(
+     i_useFootprint and not na(fpDelta) and ta.crossunder(fpCumDelta, 0.0),
+     title="0DTE-15m: Cum Delta Crossed Negative",
+     message="SPY 15m: Session cumulative footprint delta crossed below zero — net sellers gaining control")
 
 // ============================================================================
 // END OF SCRIPT

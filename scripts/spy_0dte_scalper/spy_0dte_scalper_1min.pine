@@ -1,7 +1,6 @@
 // ============================================================================
 // SPY 0DTE Scalper
 // Timeframe: 1-minute
-// Version: 1.1.0
 // Author: Chris Thomas
 // ============================================================================
 
@@ -64,6 +63,12 @@ var color C_ORANGE       = #FF9100
 var color C_GRAY         = #616161
 var color C_NEUTRAL      = #B0BEC5
 
+// Footprint colors
+var string GP_FOOTPRINT  = "Volume Footprint"
+var color  C_FP_POC      = #E040FB
+var color  C_FP_DELTA_P  = #00E676
+var color  C_FP_DELTA_N  = #FF1744
+
 // ============================================================================
 // INPUTS
 // ============================================================================
@@ -109,6 +114,15 @@ i_tickSymbol   = input.string("USI:TICK", "TICK Symbol",               group=GP_
 i_tickBull     = input.int(500,     "TICK Bullish Threshold",          minval=100, maxval=1000, step=50, group=GP_TICK)
 i_tickBear     = input.int(-500,    "TICK Bearish Threshold",          minval=-1000, maxval=-100, step=50, group=GP_TICK)
 i_tickExtreme  = input.int(800,     "TICK Extreme Threshold",          minval=500, maxval=1500, step=50, group=GP_TICK)
+
+// --- Volume Footprint ---
+i_useFootprint   = input.bool(true,   "Enable Volume Footprint",         group=GP_FOOTPRINT,
+                     tooltip="Requests volume footprint data for the current bar. Requires TradingView Premium or Ultimate. Displays buy/sell volume, delta, and POC in the dashboard. Does NOT affect signal generation — informational only. Footprint data repaints by design.")
+i_fpTicksPerRow  = input.int(10,      "Ticks Per Footprint Row",         minval=1, maxval=200, group=GP_FOOTPRINT,
+                     tooltip="Number of price ticks per row. For SPY ($0.01 mintick), 10 = $0.10 per row. On 1-min bars with typical $0.20-$0.80 ranges, this gives 2-8 rows per bar.")
+i_fpVaPct        = input.int(70,      "Value Area Percentage",           minval=50, maxval=95, step=5, group=GP_FOOTPRINT)
+i_fpShowPOC      = input.bool(true,   "Show POC Level",                  group=GP_FOOTPRINT,
+                     tooltip="Plots the Point of Control as a step line. Visual reference only — not used in signal logic.")
 
 // --- Key Levels ---
 i_showPM     = input.bool(true, "Show Pre-Market High/Low",     group=GP_LEVELS)
@@ -271,6 +285,52 @@ float sqzMomentum  = ta.linreg(sqzMomSource, i_sqzBBLen, 0)
 float tickValue = i_useTick ? request.security(i_tickSymbol, "1", close, lookahead=barmerge.lookahead_off) : na
 
 // ============================================================================
+// VOLUME FOOTPRINT DATA
+// ============================================================================
+// Dashboard-only integration. No signal coupling.
+// request.footprint() counts toward the 40-call request.*() budget (+1 call).
+
+footprint fpData = i_useFootprint ? request.footprint(i_fpTicksPerRow, i_fpVaPct) : na
+
+// Bar-level metrics
+float fpBuyVol   = not na(fpData) ? fpData.buy_volume()  : na
+float fpSellVol  = not na(fpData) ? fpData.sell_volume()  : na
+float fpDelta    = not na(fpData) ? fpData.delta()        : na
+
+// POC midpoint price
+float fpPocPrice = na
+if not na(fpData)
+    volume_row pocRow = fpData.poc()
+    if not na(pocRow)
+        fpPocPrice := (pocRow.up_price() + pocRow.down_price()) / 2.0
+
+// Derived
+float fpTotalVol = nz(fpBuyVol) + nz(fpSellVol)
+float fpDeltaPct = fpTotalVol > 0 ? (fpDelta / fpTotalVol) * 100.0 : na
+bool  fpAvailable = not na(fpData)
+
+// Delta strength classification for dashboard
+fpDeltaLabel() =>
+    if na(fpDelta)
+        "N/A"
+    else if math.abs(nz(fpDeltaPct)) > 40
+        fpDelta > 0 ? "STRONG BUY" : "STRONG SELL"
+    else if math.abs(nz(fpDeltaPct)) > 20
+        fpDelta > 0 ? "BUY LEAN" : "SELL LEAN"
+    else
+        "BALANCED"
+
+fpDeltaColor() =>
+    if na(fpDelta)
+        C_GRAY
+    else if math.abs(nz(fpDeltaPct)) > 40
+        fpDelta > 0 ? C_FP_DELTA_P : C_FP_DELTA_N
+    else if math.abs(nz(fpDeltaPct)) > 20
+        fpDelta > 0 ? color.new(C_FP_DELTA_P, 30) : color.new(C_FP_DELTA_N, 30)
+    else
+        C_NEUTRAL
+
+// ============================================================================
 // SESSION DETECTION & KEY LEVELS
 // ============================================================================
 
@@ -423,6 +483,10 @@ fill(pFast, pSlow, color=i_showEmaCloud ? emaCloudColor : color.new(color.white,
 plot(i_showVwap     ? vwapValue : na, "VWAP",       C_VWAP,      linewidth=2)
 plot(i_showVwapBands ? vwapUpper : na, "VWAP +1 SD", C_VWAP_BAND, linewidth=1, style=plot.style_circles)
 plot(i_showVwapBands ? vwapLower : na, "VWAP -1 SD", C_VWAP_BAND, linewidth=1, style=plot.style_circles)
+
+// --- Footprint POC Level ---
+plot(i_useFootprint and i_fpShowPOC ? fpPocPrice : na,
+     "Footprint POC", C_FP_POC, linewidth=2, style=plot.style_stepline)
 
 // ============================================================================
 // KEY LEVELS — HORIZONTAL LINES WITH LABELS
@@ -580,7 +644,7 @@ plotshape(i_showVwapCross and vwapCrossDown and barConfirmed, title="VWAP Cross 
 // DASHBOARD TABLE
 // ============================================================================
 
-var table dash = table.new(position.bottom_right, 3, 16,
+var table dash = table.new(position.bottom_right, 3, 20,
      bgcolor    = C_DASH_BG,
      border_width = 0,
      border_color = color.new(#FFFFFF, 85),
@@ -736,6 +800,50 @@ if barstate.islast and i_showDash
         table.cell(dash, 1, 15, i_useTick ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
         table.cell(dash, 2, 15, "",         text_size=cellSize)
 
+    // --- Row 16: Footprint Status ---
+    if i_useFootprint
+        table.cell(dash, 0, 16, "FP Status", text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 16, fpAvailable ? "ACTIVE" : "N/A",
+             text_color=fpAvailable ? C_GREEN : C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 16, "INFO ONLY", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+    else
+        table.cell(dash, 0, 16, "FP Status", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 16, "OFF",       text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 16, "",           text_size=cellSize)
+
+    // --- Row 17: Footprint Delta ---
+    if i_useFootprint and fpAvailable
+        string fpDStr = fpDeltaLabel() + " | " + str.tostring(math.round(nz(fpDelta))) + " (" + f2(nz(fpDeltaPct)) + "%)"
+        table.cell(dash, 0, 17, "FP Delta",  text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 17, fpDStr,      text_color=fpDeltaColor(), text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 17, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 17, "FP Delta",  text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 17, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 17, "",           text_size=cellSize)
+
+    // --- Row 18: Footprint Buy/Sell ---
+    if i_useFootprint and not na(fpBuyVol)
+        string bsStr = str.tostring(fpBuyVol, format.volume) + " / " + str.tostring(fpSellVol, format.volume)
+        color bsClr  = fpBuyVol > fpSellVol ? C_FP_DELTA_P : C_FP_DELTA_N
+        table.cell(dash, 0, 18, "FP Buy/Sell", text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 18, bsStr,         text_color=bsClr,       text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 18, "",             text_size=cellSize)
+    else
+        table.cell(dash, 0, 18, "FP Buy/Sell", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 18, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 18, "",             text_size=cellSize)
+
+    // --- Row 19: Footprint POC ---
+    if i_useFootprint and not na(fpPocPrice)
+        table.cell(dash, 0, 19, "FP POC",    text_color=C_DASH_TEXT, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 19, f2(fpPocPrice), text_color=C_FP_POC, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 19, "",           text_size=cellSize)
+    else
+        table.cell(dash, 0, 19, "FP POC",    text_color=C_GRAY, text_size=cellSize, text_halign=text.align_left)
+        table.cell(dash, 1, 19, i_useFootprint ? "N/A" : "OFF", text_color=C_GRAY, text_size=cellSize, text_halign=text.align_right)
+        table.cell(dash, 2, 19, "",           text_size=cellSize)
+
 // ============================================================================
 // ALERTS — STANDARD (alertcondition) + DYNAMIC (alert)
 // ============================================================================
@@ -758,23 +866,25 @@ alertcondition(i_useSqueeze and squeezeFired, title="0DTE: Squeeze Fired",
 if callsSignal
     string sqzCtx  = i_useSqueeze ? " | Sqz: " + (squeezeOn ? "ON" : "OFF") : ""
     string tickCtx = i_useTick and not na(tickValue) ? " | TICK: " + str.tostring(math.round(tickValue)) : ""
+    string fpCtx   = i_useFootprint and not na(fpDelta) ? " | FP: " + fpDeltaLabel() + " (d:" + str.tostring(math.round(fpDelta)) + ")" + (not na(fpPocPrice) ? " POC:" + f2(fpPocPrice) : "") : ""
     alert("0DTE CALLS | SPY " + f2(close) +
          " | RSI " + f2(rsiValue) +
          " | ADX " + f2(adxValue) +
          " | VWAP Dist " + f2(vwapDist) +
          " | Mode: " + currentMode +
-         sqzCtx + tickCtx,
+         sqzCtx + tickCtx + fpCtx,
          alert.freq_once_per_bar_close)
 
 if putsSignal
     string sqzCtx  = i_useSqueeze ? " | Sqz: " + (squeezeOn ? "ON" : "OFF") : ""
     string tickCtx = i_useTick and not na(tickValue) ? " | TICK: " + str.tostring(math.round(tickValue)) : ""
+    string fpCtx   = i_useFootprint and not na(fpDelta) ? " | FP: " + fpDeltaLabel() + " (d:" + str.tostring(math.round(fpDelta)) + ")" + (not na(fpPocPrice) ? " POC:" + f2(fpPocPrice) : "") : ""
     alert("0DTE PUTS | SPY " + f2(close) +
          " | RSI " + f2(rsiValue) +
          " | ADX " + f2(adxValue) +
          " | VWAP Dist " + f2(vwapDist) +
          " | Mode: " + currentMode +
-         sqzCtx + tickCtx,
+         sqzCtx + tickCtx + fpCtx,
          alert.freq_once_per_bar_close)
 
 if currentMode != currentMode[1]
@@ -788,6 +898,16 @@ if i_useSqueeze and squeezeFired
          " | ADX " + f2(adxValue) +
          " | Mode: " + currentMode,
          alert.freq_once_per_bar_close)
+
+// Footprint delta alert conditions
+alertcondition(
+     i_useFootprint and not na(fpDelta) and fpDelta > 0 and nz(fpDeltaPct) > 40,
+     title="0DTE: Strong Positive FP Delta (>40%)",
+     message="SPY 1m: Strong positive footprint delta — aggressive buying dominant")
+alertcondition(
+     i_useFootprint and not na(fpDelta) and fpDelta < 0 and nz(fpDeltaPct) < -40,
+     title="0DTE: Strong Negative FP Delta (>40%)",
+     message="SPY 1m: Strong negative footprint delta — aggressive selling dominant")
 
 // ============================================================================
 // END OF SCRIPT
