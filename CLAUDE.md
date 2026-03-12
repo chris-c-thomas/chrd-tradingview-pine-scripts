@@ -8,10 +8,10 @@ Pine Script v6 indicator suite for TradingView. Scripts live in `scripts/`, orga
 
 | Family | Purpose | Scripts |
 |--------|---------|--------|
-| `spy_0dte_scalper/` | Intraday signal generation for SPY 0DTE options | 1min, 5min, 15min |
-| `market_monitor/` | Watchlist bias overlays for multi-chart grids | 1min, 5min, 15min |
-| `trend_compass/` | Strategic trend assessment (ticker-agnostic) | Daily, 4H, 1H, 15min |
-| `intraday_analyst/` | Intraday signal generation + context for equities, ETFs, and cash indices | equity, index |
+| `spy-0dte-scalper/` | Intraday signal generation for SPY 0DTE options | 1min, 5min, 15min |
+| `market-monitor/` | Watchlist bias overlays for multi-chart grids | 1min, 5min, 15min |
+| `trend-compass/` | Strategic trend assessment (ticker-agnostic) | Daily, 4H, 1H, 15min |
+| `intraday-analyst/` | Intraday signal generation + context for equities, ETFs, and cash indices | equity, index |
 
 ## Development Workflow
 
@@ -22,7 +22,7 @@ There is no build system, linter, or test framework. Pine Script v6 is validated
 - **Inputs**: `i_` prefix (`i_emaFastLen`, `i_showDash`)
 - **Colors**: `C_` prefix, defined as `var color` constants (`C_BULL`, `C_BEAR`, `C_NEUTRAL`)
 - **Input groups**: `GP_` prefix (`GP_EMA`, `GP_VWAP`, `GP_DASH`)
-- **Files**: `{family_name}_{timeframe}.pine` — no version suffixes in filenames. Exception: `intraday_analyst/` uses `{variant}_intraday_analyst.pine` (e.g., `equity_intraday_analyst.pine`, `index_intraday_analyst.pine`)
+- **Files**: `{family-name}-{timeframe}.pine` — no version suffixes in filenames. Exception: `intraday-analyst/` uses `{variant}-intraday-analyst.pine` (e.g., `equity-intraday-analyst.pine`, `index-intraday-analyst.pine`)
 - **Version**: Header comment only (e.g., `// Version: 1.1.0`)
 
 ## Architecture Patterns
