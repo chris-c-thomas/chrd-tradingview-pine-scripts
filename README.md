@@ -10,6 +10,7 @@ A collection of Pine Script v6 indicators for TradingView, organized into purpos
 - [SPY 0DTE Scalper](#spy-0dte-scalper)
 - [Market Monitor](#market-monitor)
 - [Trend Compass](#trend-compass)
+- [Intraday Analyst](#intraday-analyst)
 - [Installation](#installation)
 - [Disclaimer](#disclaimer)
 - [License](#license)
@@ -24,6 +25,7 @@ Each family targets a distinct layer of the analysis process. Together, they for
 |:------|:-------|:-----|
 | Strategic Context | [Trend Compass](#trend-compass) | Multi-day, multi-week, and intraday structural trend phase, strength, and divergence detection |
 | Reconnaissance | [Market Monitor](#market-monitor) | Directional bias scoring for multi-chart watchlist monitoring |
+| Intraday Analysis | [Intraday Analyst](#intraday-analyst) | Ticker-agnostic intraday signal generation and context for equities, ETFs, and cash indices |
 | Execution | [SPY 0DTE Scalper](#spy-0dte-scalper) | Intraday signal generation for SPY zero-days-to-expiration options |
 
 All scripts are written in Pine Script v6 and run as chart overlays. Every indicator includes a real-time dashboard, configurable inputs, and a dual alert system (static `alertcondition` entries for TradingView alerts and dynamic `alert()` calls for webhook pipelines).
@@ -69,6 +71,23 @@ Each variant is calibrated for its timeframe: compression thresholds, EMA slope 
 
 ---
 
+## Intraday Analyst
+
+Ticker-agnostic intraday signal generation and context assessment. Two variants cover the full instrument spectrum: one for equities and ETFs (which have volume data), one for CBOE cash indices (which do not). Both share the same architectural DNA — EMA ribbon, HTF anchor, scoring engine, session levels, phase detection, regime classifier, and dashboard — but differ in how they handle fair-value anchoring and volume confirmation.
+
+| Variant | Script | Docs | Fair Value | Volume Stack | Vol Index Default | Target Instruments |
+|:--------|:-------|:-----|:-----------|:-------------|:-----------------|:-------------------|
+| **Equity** | [`equity_intraday_analyst.pine`](scripts/intraday_analyst/equity_intraday_analyst.pine) | [docs](docs/intraday_analyst/equity_intraday_analyst.md) | Session VWAP | VWAP, OBV, Relative Vol | OFF (opt-in) | SPY, QQQ, IWM, NVDA, TSLA, GOOGL, AAPL, etc. |
+| **Index** | [`index_intraday_analyst.pine`](scripts/intraday_analyst/index_intraday_analyst.pine) | [docs](docs/intraday_analyst/index_intraday_analyst.md) | Session TWAP | None (no volume on CBOE) | ON (configurable) | SPX, NDX, RUT, DJX |
+
+Both variants are timeframe-adaptive (1-minute, 5-minute, 10-minute, 15-minute) — opening range duration, ATR lookbacks, divergence sensitivity, signal cooldown, and HTF anchor mapping auto-adjust based on the chart timeframe.
+
+**Equity variant** includes the full volume stack: session-anchored VWAP with standard deviation bands, OBV trend confirmation (CONFIRMING / DIVERGING), relative volume classification (SPIKE / ABOVE / NORMAL / DRY), and prior day VWAP close. VIX context is available as an opt-in toggle for SPY and QQQ. Weighted scoring max: +/-15.
+
+**Index variant** substitutes session TWAP (time-weighted average price) for VWAP, adds a configurable companion volatility index (CBOE:VIX for SPX, CBOE:VXN for NDX, CBOE:RVX for RUT, CBOE:VXD for DJX), and uses Stochastic K/D in the confirmation slot that OBV occupies in the equity variant. Weighted scoring max: +/-13.
+
+---
+
 ## Installation
 
 1. Open a chart in [TradingView](https://www.tradingview.com/).
@@ -89,4 +108,4 @@ These indicators are analytical tools for educational and informational purposes
 
 ## License
 
-[MIT](LICENSE) -- Copyright (c) 2026 Chris Thomas
+[MIT](LICENSE)

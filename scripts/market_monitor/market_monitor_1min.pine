@@ -1,6 +1,7 @@
 // ============================================================================
 // Market Monitor — General Purpose
 // Timeframe: Adaptive (1m through Daily)
+// Version: 1.0.0
 // Author: Chris Thomas
 // ============================================================================
 // Lightweight directional-bias overlay designed for multi-chart monitoring

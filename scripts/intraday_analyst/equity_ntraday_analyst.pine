@@ -1,6 +1,5 @@
 // ============================================================================
 // Equity Intraday Analyst
-//
 // Timeframe: 1-minute, 5-minute, 10-minute, 15-minute (adaptive)
 // Version: 1.0.0
 // Author: Chris Thomas
@@ -49,8 +48,8 @@
 // ============================================================================
 //@version=6
 indicator(
-     title          = "Intraday Analyst",
-     shorttitle     = "IA",
+     title          = "Equity Intraday Analyst",
+     shorttitle     = "EQ-IA",
      overlay        = true,
      max_labels_count  = 500,
      max_lines_count   = 500,
@@ -788,7 +787,7 @@ if i_showDash and barstate.islast
     int r = 0
 
     // Header
-    table.cell(dash, 0, r, "INTRADAY", text_color=C_DASH_HEADER, text_size=tblSize, text_halign=text.align_left)
+    table.cell(dash, 0, r, "EQ INTRADAY", text_color=C_DASH_HEADER, text_size=tblSize, text_halign=text.align_left)
     table.cell(dash, 1, r, syminfo.ticker + " " + str.tostring(tfMinutes, "#") + "m", text_color=C_DASH_HEADER, text_size=tblSize, text_halign=text.align_right)
     r += 1
 
@@ -956,8 +955,8 @@ if i_showDash and barstate.islast
 // ============================================================================
 // ALERTS
 // ============================================================================
-alertcondition(callsSignal, title="CALLS Signal", message="Intraday Analyst: CALLS signal fired")
-alertcondition(putsSignal,  title="PUTS Signal",  message="Intraday Analyst: PUTS signal fired")
+alertcondition(callsSignal, title="CALLS Signal", message="Equity Intraday Analyst: CALLS signal fired")
+alertcondition(putsSignal,  title="PUTS Signal",  message="Equity Intraday Analyst: PUTS signal fired")
 alertcondition(biasScore >= 7,  title="Strong Bullish Bias", message="Bias score reached strong bullish territory")
 alertcondition(biasScore <= -7, title="Strong Bearish Bias", message="Bias score reached strong bearish territory")
 alertcondition(i_useSqueeze and sqzState == "FIRED", title="Squeeze Fired", message="TTM Squeeze has fired")

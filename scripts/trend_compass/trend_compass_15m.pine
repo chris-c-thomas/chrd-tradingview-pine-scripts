@@ -1,6 +1,7 @@
 // ============================================================================
 // Trend Compass — 15-Minute
 // Timeframe: 15-Minute (primary), compatible with 10M/30M
+// Version: 1.0.0
 // Author: Chris Thomas
 // ============================================================================
 // Strategic intraday trend assessment overlay for equities, ETFs, and indices.

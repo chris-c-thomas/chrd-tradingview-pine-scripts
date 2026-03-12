@@ -28,9 +28,9 @@ The volatility index symbol is a configurable input. When switching from SPX to 
 
 ---
 
-## Relationship to the Intraday Analyst (Stocks/ETFs)
+## Relationship to the Equity Intraday Analyst (Stocks/ETFs)
 
-| Component | Index Intraday Analyst (this script) | Intraday Analyst |
+| Component | Index Intraday Analyst (this script) | Equity Intraday Analyst |
 |:----------|:------------------------------------|:-----------------|
 | Volume data | None (CBOE constraint) | Yes (full volume stack) |
 | Fair value reference | Session TWAP (time-weighted) | Session VWAP (volume-weighted) |
@@ -42,7 +42,7 @@ The volatility index symbol is a configurable input. When switching from SPX to 
 | Scoring max (weighted) | +/-13 | +/-15 (adds OBV condition) |
 | Target instruments | CBOE cash indices (no volume) | Any equity or ETF with volume |
 
-**Use the Intraday Analyst** for: SPY, QQQ, IWM, NVDA, TSLA, GOOGL, AAPL, MSFT, AMD, or any instrument with volume data.
+**Use the Equity Intraday Analyst** for: SPY, QQQ, IWM, NVDA, TSLA, GOOGL, AAPL, MSFT, AMD, or any instrument with volume data.
 
 **Use the Index Intraday Analyst** (this script) for: SPX, NDX, RUT, DJX, or any instrument without volume data.
 
@@ -83,7 +83,7 @@ The companion volatility index (VIX for SPX, VXN for NDX, etc.) provides context
 
 ### All Other Components
 
-EMA Ribbon, HTF Anchor EMA, RSI (with divergence detection), MACD, ADX/DMI, Stochastic, ATR regime, BB width percentile, TTM Squeeze, NYSE TICK, session levels, phase detection, regime classifier, signal engine, and dashboard are architecturally identical across both Intraday Analyst variants. See the Intraday Analyst documentation for detailed descriptions.
+EMA Ribbon, HTF Anchor EMA, RSI (with divergence detection), MACD, ADX/DMI, Stochastic, ATR regime, BB width percentile, TTM Squeeze, NYSE TICK, session levels, phase detection, regime classifier, signal engine, and dashboard are architecturally identical across both Intraday Analyst variants. See the Equity Intraday Analyst documentation for detailed descriptions.
 
 ---
 
@@ -139,17 +139,3 @@ Max 8 calls. Disabling TICK saves 2, disabling vol index saves 2.
 5. **TICK data RTH only**: NYSE TICK returns N/A outside 9:30-16:00 ET.
 6. **No backtest capability**: `indicator()`, not `strategy()`.
 7. **RVX/VXD availability**: Depending on your TradingView data plan, some secondary volatility indices may have limited data.
-
----
-
-## Changelog
-
-### v1.0.0
-
-- Initial release. Generalized from SPX Intraday Analyst to support any CBOE cash index.
-- Configurable volatility index symbol with mapping tooltip (VIX, VXN, RVX, VXD).
-- Dynamic ticker display in dashboard header and alert messages.
-- Session-anchored TWAP with standard deviation bands.
-- Weighted scoring engine: 3 structural (2x) + 7 confirmation (1x), max +/-13.
-- Timeframe-adaptive parameters for 1m/5m/10m/15m charts.
-- Full Pine v6 compliance.

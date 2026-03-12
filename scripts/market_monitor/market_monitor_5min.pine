@@ -1,6 +1,7 @@
 // ============================================================================
 // Market Monitor — 5-Minute Optimized
 // Timeframe: 5-minute (primary), compatible with 3m/10m
+// Version: 1.0.0
 // Author: Chris Thomas
 // ============================================================================
 // Directional-bias overlay purpose-built for 5-minute chart monitoring in

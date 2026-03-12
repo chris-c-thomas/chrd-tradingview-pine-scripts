@@ -17,7 +17,7 @@ This is the general-purpose companion to the Index Intraday Analyst (which handl
 
 ## Relationship to Index Intraday Analyst
 
-| Component | Index Intraday Analyst | Intraday Analyst (this script) |
+| Component | Index Intraday Analyst | Equity Intraday Analyst (this script) |
 |:----------|:--------------------|:-------------------------------|
 | Volume data | None (CBOE constraint) | Yes (full volume stack) |
 | Fair value reference | Session TWAP (time-weighted) | Session VWAP (volume-weighted) |
@@ -200,17 +200,3 @@ Require ADX:           OFF
 6. **Single-chart focus**: No cross-symbol correlation. For multi-chart reconnaissance, use the Market Monitor family.
 7. **Pre-market levels require extended hours**: Enable in chart settings.
 8. **Prior Day VWAP latching**: Value captured at session boundary. If loaded mid-session, will be `na` until next session start.
-
----
-
-## Changelog
-
-### v1.0.0
-
-- Initial release.
-- Full volume stack: Session VWAP with std dev bands, OBV trend confirmation, relative volume classification, prior day VWAP close.
-- Weighted scoring engine: 3 structural (2x) + 8 confirmation (1x), max +/-15 with VIX.
-- VIX context OFF by default (opt-in for SPY/QQQ).
-- NYSE TICK ON by default.
-- Timeframe-adaptive parameters for 1m/5m/10m/15m charts.
-- All Pine v6 compliance: no multi-line ternaries, no reserved keywords, no nz() on strings, pivot calls at global scope.
