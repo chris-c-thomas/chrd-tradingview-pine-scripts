@@ -151,7 +151,7 @@ Dashboard row shows the ratio and classification. Not directly scored.
 - **RSI Divergence Detection** over configurable lookback (default 5 bars = 1.25 hrs). Classic bullish/bearish divergence scored as confirmation condition (1x). Dashboard and alert integration.
 - **NYSE TICK Index with SMA smoothing** pulled via `request.security()`. Raw and 5-period SMA-smoothed TICK pulled; smoothed value used for scoring with calibrated lower thresholds (300/-300/600).
 - **Volume Footprint** (v1.2) integration via `request.footprint()` for deep intrabar order flow analysis. Displays buy/sell volume, delta with strength classification, cumulative session delta, and POC/VAH/VAL as step-line levels. Delta integrated as 1x confirmation scoring condition (ON by default). Prior bar's POC enriches the support/resistance proximity pool. Requires TradingView Premium or Ultimate plan; degrades gracefully to N/A on lower plans.
-- **Multi-timeframe confirmation layer (5-minute)** pulling 5-min RSI, EMA trend, MACD histogram, and VWAP cross via `request.security()`.
+- **Multi-timeframe confirmation layer (5-minute)** pulling 5-min RSI, EMA trend, and MACD histogram via consolidated `request.security()` tuple.
 - **Pre-Market High/Low** automatically detected and drawn as horizontal levels once RTH begins.
 - **Prior Day High/Low/Close** pulled from the daily timeframe and plotted as dotted reference levels.
 - **Prior Day VWAP Close** (new in v1.1): institutional fair value reference from prior session. Plotted as a dotted cyan line. Included in level proximity pool.
@@ -358,12 +358,11 @@ Both raw and SMA(5)-smoothed TICK are pulled from the 1-min timeframe. Smoothed 
 | 5-Min Fast EMA | 9 | Fast EMA on 5-min bars |
 | 5-Min Slow EMA | 21 | Slow EMA on 5-min bars |
 
-Pulls four categories of 5-minute data:
+Pulls three categories of 5-minute data:
 
 1. **5-Min EMA Trend**: confirmation condition (1x weight)
 2. **5-Min RSI**: displayed in dashboard, not directly scored
 3. **5-Min MACD Histogram**: MACD(12,26,9). Confirmation condition (1x weight)
-4. **5-Min VWAP Cross**: dashboard awareness, not scored
 
 ### Key Price Levels
 
@@ -693,7 +692,7 @@ Default BB(20, 2.0) vs KC(20, 1.5) works well across timeframes. Squeeze recency
 
 ### Multi-Timeframe Toggle
 
-When disabled, removes 5 `request.security()` calls. Conditions #7 and #8 will never score, reducing effective max score to 13 (weighted) or 10 (equal).
+When disabled, removes 1 `request.security()` tuple call (5-min RSI, EMA fast, EMA slow, MACD histogram). Conditions #7 and #8 will never score, reducing effective max score to 13 (weighted) or 10 (equal).
 
 ### Directional Bias Background
 
@@ -767,17 +766,14 @@ Min Score:             5
 
 **Performance**: the script uses `var` declarations for persistent state (lines, labels, level values, cooldown counters). All dashboard updates occur only on `barstate.islast`. RSI divergence detection uses native `ta.lowest()` and `ta.highest()` with no loops. ATR regime and BB width percentile use simple `ta.sma()` comparisons. Score trend tracking uses bar indexing (`[1]`, `[2]`) with no arrays.
 
-**`request.*()` budget**: the script makes 14 `request.*()` calls total:
+**`request.*()` budget**: the script makes 4 `request.*()` calls total, consolidated via tuple returns (v1.2.1):
 
-- 4 for MTF (5-min RSI, 5-min EMA fast, 5-min EMA slow, 5-min MACD histogram)
-- 1 for 5-min VWAP cross detection
-- 3 for prior day data (high, low, close on daily timeframe)
-- **1 for prior day VWAP close** (new in v1.1)
-- 1 for daily open
-- 2 for NYSE TICK (1-min raw close, 1-min SMA(5) smoothed)
-- **1 for `request.footprint()`** (new in v1.2, volume footprint data)
+- 1 tuple on `"1"` (NYSE TICK raw close + SMA(5) smoothed)
+- 1 tuple on `"5"` (MTF RSI, EMA fast, EMA slow, MACD histogram)
+- 1 tuple on `"D"` (prior day high, low, close, VWAP close, current day open)
+- 1 for `request.footprint()` (volume footprint data)
 
-This is well within TradingView's limit of 40 calls. Disabling MTF removes 5 calls; disabling TICK removes 2; disabling footprint removes 1.
+This is well within TradingView's limit of 40 calls. Disabling MTF removes 1 call; disabling TICK removes 1; disabling footprint removes 1.
 
 **Repainting**: all signal logic is gated by `barstate.isconfirmed`. MTF data uses `lookahead=barmerge.lookahead_off`. Prior day data uses `lookahead=barmerge.lookahead_on` with `[1]` offset for correct historical behavior. **Footprint data repaints by design** — `request.footprint()` has no `lookahead` parameter. Real-time uses 1-tick granularity (Premium+) while historical bars recalculate with coarser intervals. The footprint delta scoring condition (1x weight) is documented as repainting-capable; at 1 point on a 16-point scale (6.25%), the impact is within the scoring engine's noise floor.
 
@@ -793,11 +789,11 @@ This is well within TradingView's limit of 40 calls. Disabling MTF removes 5 cal
 
 **Prior day VWAP**: uses `ta.vwap(hlc3)[1]` inside `request.security()` on the daily timeframe with `lookahead_on` to correctly fetch the prior day's closing VWAP value without repainting.
 
-**MACD tuple destructuring**: `ta.macd()` returns `[macdLine, signalLine, histogram]`. The `[2]` index extracts the histogram inside `request.security()` on 5-min.
+**MACD tuple destructuring**: `ta.macd()` returns `[macdLine, signalLine, histogram]` at global scope. The histogram is passed into the consolidated 5-min `request.security()` tuple alongside RSI and EMA values.
 
 **Opening range bar math**: `orBarsNeeded = math.ceil(i_orMinutes / 15)`.
 
-**TICK smoothing**: SMA(5) calculated on 1-min timeframe inside `request.security()` for true 5-minute average breadth.
+**TICK smoothing**: raw close and SMA(5) pulled in a single `request.security()` tuple on the 1-min timeframe for true 5-minute average breadth.
 
 **Timezone**: session detection uses configurable `i_tz`, defaulting to `America/New_York`.
 

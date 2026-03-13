@@ -671,7 +671,7 @@ TICK Filter:           OFF
 
 **Performance**: the script uses `var` declarations for persistent state (lines, labels, level values, cooldown counters) to avoid reallocation on every bar. The dashboard table is updated only on `barstate.islast` to reduce computation overhead on historical bars. TTM Squeeze calculations (BB, KC, linear regression) use native `ta.*` functions and add negligible overhead.
 
-**`request.*()` budget**: the script makes 6 `request.*()` calls total: 3 for prior day data (high, low, close on daily timeframe), 1 for daily open, 1 for NYSE TICK (1-minute timeframe), and 1 for `request.footprint()` (volume footprint data). This is well within TradingView's limit of 40 calls per script. When TICK is disabled, 5 calls are active; when footprint is also disabled, 4 calls.
+**`request.*()` budget**: the script makes 3 `request.*()` calls total, consolidated via tuple returns (v1.0.1): 1 tuple on `"D"` (prior day high, low, close, current day open), 1 for NYSE TICK on `"1"` (same-timeframe, no bar-count multiplier), and 1 for `request.footprint()` (volume footprint data). This is well within TradingView's limit of 40 calls per script. When TICK is disabled, 2 calls are active; when footprint is also disabled, 1 call.
 
 **Repainting**: all signal logic is gated by `barstate.isconfirmed` by default. This means signals only appear after a bar closes, not during its formation. This eliminates phantom signals but introduces a 1-bar delay on live charts. TICK data from `request.security()` uses `lookahead=barmerge.lookahead_off` ensuring no forward-looking data.
 

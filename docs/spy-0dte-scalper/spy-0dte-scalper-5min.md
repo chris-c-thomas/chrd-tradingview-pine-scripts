@@ -280,13 +280,12 @@ The 5-minute variant's primary enhancement over the 1-minute version. Pulls 1-mi
 |------|-------|
 | 1-Min RSI | Dashboard display + awareness. When 5-min RSI looks neutral but 1-min RSI is already OB/OS, momentum may be exhausted on the lower timeframe. |
 | 1-Min EMA Trend (fast > slow?) | Signal scoring condition #6. When 1-min trend aligns with 5-min direction, the signal scores an extra point. |
-| 1-Min VWAP Cross | Detects if a VWAP cross occurred on the 1-min within the current 5-min bar. Informational for dashboard awareness. |
 
 **Signal integration**: when MTF is enabled, the signal engine includes condition #6: "1-min EMA trend confirms the 5-min signal direction." This is additive — it improves signal quality when present but does not gate signals when absent (unless `i_minScore` is set high enough to require it).
 
 **Dashboard integration**: two dedicated rows (1m Trend, 1m RSI) appear in the dashboard. When MTF is disabled, these rows show "OFF" in gray.
 
-**Performance note**: each `request.security()` call adds a small computation overhead. Three calls to the 1-minute timeframe are within TradingView's limits and do not materially affect indicator loading time.
+**Performance note**: all three 1-minute values (RSI, EMA fast, EMA slow) are pulled in a single consolidated `request.security()` tuple, requiring only one pass through the 1-minute bar data.
 
 ### Key Price Levels
 
@@ -664,7 +663,7 @@ When enabled, adds 1-min RSI and EMA trend to the dashboard and makes condition 
 
 | Setting | Effect |
 |---------|--------|
-| ON (default) | Full MTF layer. Condition #6 available. Dashboard shows 1m data. Three `request.security()` calls active. |
+| ON (default) | Full MTF layer. Condition #6 available. Dashboard shows 1m data. One `request.security()` tuple call active. |
 | OFF | No MTF data. Conditions #1-5, #7-9 only. Dashboard shows "OFF" for MTF rows. Slightly faster load. |
 
 **When to disable**: if you're running the 1-minute variant simultaneously on a separate chart and don't want redundant MTF computation. Or if you prefer a simpler signal model.
@@ -728,7 +727,7 @@ Min Score:             3
 
 **Performance**: the script uses `var` declarations for persistent state (lines, labels, level values, cooldown counters) to avoid reallocation on every bar. TTM Squeeze calculations (BB, KC, linear regression) use native `ta.*` functions and add negligible overhead. The dashboard table is updated only on `barstate.islast`.
 
-**`request.*()` budget**: the script makes 11 `request.*()` calls total: 3 for MTF (1-min RSI, 1-min EMA fast, 1-min EMA slow), 3 for prior day data (high, low, close on daily timeframe), 1 for daily open, 1 for 1-min VWAP cross detection, 1 for NYSE TICK (1-minute timeframe), 1 for `request.footprint()` (volume footprint data), plus the internal VWAP calculation. This is well within TradingView's limit of 40 calls per script. Disabling MTF removes 3 calls; disabling TICK removes 1; disabling footprint removes 1.
+**`request.*()` budget**: the script makes 4 `request.*()` calls total, consolidated via tuple returns (v1.0.1): 1 tuple on `"1"` for MTF (1-min RSI, EMA fast, EMA slow), 1 for NYSE TICK on `"1"` (separate symbol, cannot merge with MTF tuple), 1 tuple on `"D"` (prior day high, low, close, current day open), and 1 for `request.footprint()` (volume footprint data). This is well within TradingView's limit of 40 calls per script. Disabling MTF removes 1 call; disabling TICK removes 1; disabling footprint removes 1.
 
 **Repainting**: all signal logic is gated by `barstate.isconfirmed`. Signals appear after bar close only. MTF data from `request.security()` uses `lookahead=barmerge.lookahead_off` (no forward-looking data) for 1-minute pulls, ensuring no repainting from lower-timeframe data.
 
