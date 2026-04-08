@@ -1,0 +1,479 @@
+// ============================================================================
+// Pocket Scout — SPY/QQQ Mobile Intraday
+// Timeframe: Adaptive (1m / 5m / 15m)
+// Version: 1.0.0
+// Author: Chris Thomas
+// ============================================================================
+// Mobile-first intraday bias tool purpose-built for iPhone viewing.
+//
+// Design philosophy: ruthless information hierarchy. Every pixel earns its
+// place. The dashboard compresses directional context into 8 rows at huge
+// text size so the full picture reads in under 2 seconds with one glance
+// while leaving ~70% of screen real estate for price action.
+//
+// Scope: SPY / QQQ / IWM / DIA and leveraged siblings. Ticker-agnostic for
+// liquid US equity ETFs. Auto-detects vol index: SPY/DIA -> VIX,
+// QQQ -> VXN, IWM -> RVX.
+//
+// Components (intentionally minimal):
+//   - EMA ribbon (9 / 21 / 50)
+//   - Session VWAP
+//   - HTF Anchor EMA (1m -> 15m, 5m -> 1h, 15m -> 4h)
+//   - RSI (14) + MACD (12/26/9)
+//   - Vol index level + intraday slope
+//   - Prior Day H/L/C + Session HOD/LOD
+//   - 6-condition weighted scoring engine (structural 2x / confirmation 1x)
+//   - 8-row merged-banner dashboard optimized for mobile portrait viewing
+//   - 4 high-signal alerts
+//
+// Explicitly out of scope (see desktop indicators instead):
+//   - Divergence detection           (Intraday Analyst)
+//   - TTM Squeeze                    (Intraday Analyst)
+//   - ADX / DI tiers                 (Trend Compass)
+//   - Signal arrows / entry labels   (SPY 0DTE Scalper)
+//   - NYSE TICK                      (Intraday Analyst)
+//   - Multi-timeframe EMA stack      (Trend Compass family)
+// ============================================================================
+
+//@version=6
+indicator(
+     title             = "Pocket Scout - SPY/QQQ",
+     shorttitle        = "PKT-SCOUT",
+     overlay           = true,
+     max_labels_count  = 50,
+     max_lines_count   = 50,
+     max_boxes_count   = 10,
+     max_bars_back     = 2000
+ )
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+var string GP_CORE  = "Core"
+var string GP_VOL   = "Volatility Index"
+var string GP_OVR   = "Overlays"
+var string GP_SCORE = "Scoring"
+var string GP_DASH  = "Dashboard"
+
+// Colors — high contrast for mobile OLED
+var color C_BULL       = #00E676
+var color C_BEAR       = #FF1744
+var color C_NEUTRAL    = #9E9E9E
+var color C_YELLOW     = #FFD600
+var color C_CYAN       = #00E5FF
+var color C_WHITE      = #FFFFFF
+var color C_DASH_BG    = color.new(#0D1117, 5)
+var color C_DASH_TEXT  = #ECEFF1
+var color C_DASH_DIM   = #90A4AE
+var color C_HEADER_BG  = color.new(#37474F, 0)
+
+var color C_PDH        = #FF6E40
+var color C_PDL        = #64FFDA
+var color C_PDC        = #B0BEC5
+var color C_HOD        = color.new(#FF6E40, 40)
+var color C_LOD        = color.new(#64FFDA, 40)
+var color C_VWAP       = #FFFFFF
+var color C_EMA_FAST   = #FFD600
+var color C_EMA_MID    = #FF9100
+var color C_EMA_SLOW   = #E040FB
+
+// Banner backgrounds — vivid for instant read
+var color C_BANNER_SBULL = #00C853
+var color C_BANNER_MBULL = color.new(#00C853, 55)
+var color C_BANNER_SBEAR = #D50000
+var color C_BANNER_MBEAR = color.new(#D50000, 55)
+var color C_BANNER_NEUT  = color.new(#546E7A, 35)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+// --- Core ---
+i_emaFast  = input.int(9,    "Fast EMA",    minval=2, maxval=50,  group=GP_CORE)
+i_emaMid   = input.int(21,   "Mid EMA",     minval=5, maxval=100, group=GP_CORE)
+i_emaSlow  = input.int(50,   "Slow EMA",    minval=10,maxval=200, group=GP_CORE)
+i_rsiLen   = input.int(14,   "RSI Length",  minval=2, maxval=50,  group=GP_CORE)
+i_macdFast = input.int(12,   "MACD Fast",   minval=2, maxval=50,  group=GP_CORE)
+i_macdSlow = input.int(26,   "MACD Slow",   minval=5, maxval=100, group=GP_CORE)
+i_macdSig  = input.int(9,    "MACD Signal", minval=2, maxval=50,  group=GP_CORE)
+i_atrLen   = input.int(14,   "ATR Length",  minval=2, maxval=50,  group=GP_CORE)
+i_tz       = input.string("America/New_York", "Session Timezone", group=GP_CORE,
+                  tooltip="Internal timezone for session boundary detection. Keep at America/New_York regardless of chart display timezone.")
+
+// --- Volatility Index ---
+i_volAuto   = input.bool(true, "Auto-detect vol index from symbol", group=GP_VOL,
+                  tooltip="SPY/DIA -> VIX, QQQ -> VXN, IWM -> RVX. Disable to override manually.")
+i_volManual = input.string("CBOE:VIX", "Manual Vol Index Symbol", group=GP_VOL)
+
+// --- Overlays ---
+i_showEMAs   = input.bool(true,  "Show EMAs",            group=GP_OVR)
+i_showVWAP   = input.bool(true,  "Show Session VWAP",    group=GP_OVR)
+i_showPDLvls = input.bool(true,  "Show Prior Day H/L/C", group=GP_OVR)
+i_showHLLvls = input.bool(true,  "Show HOD / LOD",       group=GP_OVR)
+i_showBiasBG = input.bool(false, "Bias Background Tint", group=GP_OVR,
+                  tooltip="Subtle chart background tint for STRONG BULL / STRONG BEAR. Off by default — overlays can clutter small screens.")
+
+// --- Scoring ---
+i_useWeighted = input.bool(true, "Weighted Scoring (structural 2x)", group=GP_SCORE,
+                  tooltip="Weighted: structural conditions count 2x (max ±9). Equal: all conditions 1x (max ±6).")
+i_strongThr   = input.int(6, "STRONG Threshold", minval=3, maxval=9, group=GP_SCORE,
+                  tooltip="Absolute score required for STRONG classification. Default 6 for weighted; consider 4 for equal.")
+i_modThr      = input.int(3, "MODERATE Threshold", minval=1, maxval=6, group=GP_SCORE)
+
+// --- Dashboard ---
+i_showDash = input.bool(true, "Show Dashboard", group=GP_DASH)
+i_dashSize = input.string("Huge", "Dashboard Size",
+                  options=["Normal","Large","Huge"], group=GP_DASH,
+                  tooltip="Huge is recommended for iPhone portrait. Large for iPad. Normal for desktop cross-check.")
+i_dashPos  = input.string("Top Right", "Dashboard Position",
+                  options=["Top Right","Top Left","Bottom Right","Bottom Left"], group=GP_DASH,
+                  tooltip="Top Right default on mobile — TradingView's bottom toolbar consumes ~80pt at the bottom of the iPhone screen.")
+
+// ============================================================================
+// TIMEFRAME ADAPTATION
+// ============================================================================
+float tfMin         = timeframe.in_seconds() / 60.0
+bool  intradayChart = timeframe.isintraday
+
+// HTF anchor selection: 1m -> 15m, 5m -> 1h, 15m -> 4h, else Daily
+string htfTF = tfMin <= 1.0  ? "15"  :
+               tfMin <= 5.0  ? "60"  :
+               tfMin <= 15.0 ? "240" :
+               "D"
+
+// ============================================================================
+// SYMBOL -> VOL INDEX RESOLUTION
+// ============================================================================
+resolveVolIndex() =>
+    t = syminfo.ticker
+    isQQQ = t == "QQQ"  or t == "TQQQ" or t == "SQQQ" or t == "QLD" or t == "PSQ"
+    isIWM = t == "IWM"  or t == "TNA"  or t == "TZA"
+    isQQQ ? "CBOE:VXN" : isIWM ? "CBOE:RVX" : "CBOE:VIX"
+
+string volSym = i_volAuto ? resolveVolIndex() : i_volManual
+
+// Short display name for dashboard
+string volSymShort = volSym == "CBOE:VIX" ? "VIX" :
+                     volSym == "CBOE:VXN" ? "VXN" :
+                     volSym == "CBOE:RVX" ? "RVX" :
+                     volSym
+
+// ============================================================================
+// CORE CALCULATIONS (all ta.* at global scope, every-bar execution)
+// ============================================================================
+
+// --- EMAs ---
+float emaFast = ta.ema(close, i_emaFast)
+float emaMid  = ta.ema(close, i_emaMid)
+float emaSlow = ta.ema(close, i_emaSlow)
+
+bool emaBull = emaFast > emaMid and emaMid > emaSlow
+bool emaBear = emaFast < emaMid and emaMid < emaSlow
+
+// --- Session VWAP (auto-anchored on intraday TFs) ---
+float vwapVal = intradayChart ? ta.vwap(hlc3) : na
+
+// --- RSI ---
+float rsiVal = ta.rsi(close, i_rsiLen)
+
+// --- MACD (destructure tuple) ---
+[macdLine, signalLine, histLine] = ta.macd(close, i_macdFast, i_macdSlow, i_macdSig)
+bool macdBull = macdLine > signalLine
+bool macdBear = macdLine < signalLine
+
+// --- ATR ---
+float atrVal = ta.atr(i_atrLen)
+
+// --- HTF Anchor EMA (slow EMA computed locally, pulled up via request.security) ---
+float htfAnchorSrc = ta.ema(close, i_emaSlow)
+float htfAnchor    = request.security(syminfo.tickerid, htfTF, htfAnchorSrc,
+     lookahead=barmerge.lookahead_off)
+
+// ============================================================================
+// PRIOR DAY LEVELS + TODAY'S OPEN (tuple consolidation — single call)
+// ============================================================================
+[pdh, pdl, pdc, dayOpen] = request.security(
+     syminfo.tickerid, "D",
+     [high[1], low[1], close[1], open],
+     lookahead=barmerge.lookahead_on)
+
+// ============================================================================
+// VOL INDEX (2 calls — cross-symbol, cross-timeframe required)
+// ============================================================================
+float volClose   = request.security(volSym, timeframe.period, close,
+     lookahead=barmerge.lookahead_off)
+float volDayOpen = request.security(volSym, "D", open,
+     lookahead=barmerge.lookahead_on)
+
+float volChgPct  = (not na(volDayOpen) and volDayOpen != 0) ?
+     ((volClose - volDayOpen) / volDayOpen) * 100.0 : na
+
+// Slope classification: 0.5% deadband to avoid flip-flopping
+bool volFalling = not na(volChgPct) and volChgPct < -0.5
+bool volRising  = not na(volChgPct) and volChgPct >  0.5
+
+// ============================================================================
+// SESSION HOD / LOD TRACKING
+// ============================================================================
+var float sessHOD = na
+var float sessLOD = na
+
+bool newDay = ta.change(time("D")) != 0
+
+if newDay
+    sessHOD := high
+    sessLOD := low
+else
+    sessHOD := na(sessHOD) ? high : math.max(sessHOD, high)
+    sessLOD := na(sessLOD) ? low  : math.min(sessLOD, low)
+
+// ============================================================================
+// DAY CHANGE %
+// ============================================================================
+float dayChgPct = (not na(dayOpen) and dayOpen != 0) ?
+     ((close - dayOpen) / dayOpen) * 100.0 : 0.0
+
+// ============================================================================
+// SCORING ENGINE — 6 conditions, weighted or equal
+// ============================================================================
+int structWeight = i_useWeighted ? 2 : 1
+int maxScore     = i_useWeighted ? 9 : 6
+
+// Structural (2x weighted)
+int sEma  = emaBull ? structWeight : emaBear ? -structWeight : 0
+int sVwap = not na(vwapVal) ?
+     (close > vwapVal ? structWeight : close < vwapVal ? -structWeight : 0) : 0
+int sHtf  = not na(htfAnchor) ?
+     (close > htfAnchor ? structWeight : close < htfAnchor ? -structWeight : 0) : 0
+
+// Confirmation (1x)
+int sRsi  = rsiVal > 55 ? 1 : rsiVal < 45 ? -1 : 0
+int sMacd = macdBull   ? 1 : macdBear    ? -1 : 0
+int sVol  = volFalling ? 1 : volRising   ? -1 : 0
+
+int biasScore = sEma + sVwap + sHtf + sRsi + sMacd + sVol
+
+// Classification (thresholds adaptive to weighted/equal mode is user's job via inputs)
+bool isStrongBull = biasScore >=  i_strongThr
+bool isStrongBear = biasScore <= -i_strongThr
+bool isModBull    = biasScore >=  i_modThr and not isStrongBull
+bool isModBear    = biasScore <= -i_modThr and not isStrongBear
+
+string biasLabel = (
+     isStrongBull ? "STRONG BULL" :
+     isStrongBear ? "STRONG BEAR" :
+     isModBull    ? "MOD BULL"    :
+     isModBear    ? "MOD BEAR"    :
+     "NEUTRAL")
+
+color biasBannerBg = (
+     isStrongBull ? C_BANNER_SBULL :
+     isStrongBear ? C_BANNER_SBEAR :
+     isModBull    ? C_BANNER_MBULL :
+     isModBear    ? C_BANNER_MBEAR :
+     C_BANNER_NEUT)
+
+color biasTextColor = (isStrongBull or isStrongBear) ? C_WHITE : C_DASH_TEXT
+
+string biasArrow = (
+     isStrongBull or isModBull ? "▲" :
+     isStrongBear or isModBear ? "▼" :
+     "►")
+
+// ============================================================================
+// KEY LEVEL PROXIMITY — nearest level in ATR units
+// ============================================================================
+float d_pdh = (not na(pdh)     and atrVal > 0) ? math.abs(close - pdh)     / atrVal : 1e10
+float d_pdl = (not na(pdl)     and atrVal > 0) ? math.abs(close - pdl)     / atrVal : 1e10
+float d_pdc = (not na(pdc)     and atrVal > 0) ? math.abs(close - pdc)     / atrVal : 1e10
+float d_hod = (not na(sessHOD) and atrVal > 0) ? math.abs(close - sessHOD) / atrVal : 1e10
+float d_lod = (not na(sessLOD) and atrVal > 0) ? math.abs(close - sessLOD) / atrVal : 1e10
+
+float minDist = math.min(math.min(math.min(d_pdh, d_pdl), math.min(d_pdc, d_hod)), d_lod)
+
+string nearestName = (
+     minDist == d_pdh ? "PDH" :
+     minDist == d_pdl ? "PDL" :
+     minDist == d_pdc ? "PDC" :
+     minDist == d_hod ? "HOD" :
+     minDist == d_lod ? "LOD" :
+     "—")
+
+string proxLabel = (
+     minDist <= 0.25 ? "AT "   + nearestName :
+     minDist <= 0.75 ? "NEAR " + nearestName :
+     "MID RANGE")
+
+color proxColor = (
+     minDist <= 0.25 ? C_YELLOW :
+     minDist <= 0.75 ? C_CYAN   :
+     C_DASH_DIM)
+
+// ============================================================================
+// DASHBOARD SUPPORT STRINGS
+// ============================================================================
+
+// VWAP distance in ATRs
+float  vwapDistAtr = (intradayChart and not na(vwapVal) and atrVal > 0) ?
+     (close - vwapVal) / atrVal : na
+
+string vwapDistStr = na(vwapDistAtr) ? "—" :
+     (vwapDistAtr >= 0 ? "+" : "") + str.tostring(vwapDistAtr, "0.00") + " ATR"
+
+string vwapPosStr = (
+     na(vwapDistAtr)     ? "—"     :
+     vwapDistAtr >  0.10 ? "ABOVE" :
+     vwapDistAtr < -0.10 ? "BELOW" :
+     "AT")
+
+color vwapPosClr = (
+     na(vwapDistAtr)     ? C_DASH_DIM :
+     vwapDistAtr >  0.10 ? C_BULL     :
+     vwapDistAtr < -0.10 ? C_BEAR     :
+     C_YELLOW)
+
+// EMA stack
+string emaStackStr = emaBull ? "BULLISH" : emaBear ? "BEARISH" : "MIXED"
+color  emaStackClr = emaBull ? C_BULL    : emaBear ? C_BEAR    : C_YELLOW
+
+// Momentum line (RSI + MACD combined)
+string rsiStr     = str.tostring(rsiVal, "0.0")
+string macdArrow  = macdBull ? "▲" : macdBear ? "▼" : "►"
+string momStr     = "RSI " + rsiStr + "  MACD " + macdArrow
+int    momSum     = sRsi + sMacd
+color  momClr     = momSum > 0 ? C_BULL : momSum < 0 ? C_BEAR : C_NEUTRAL
+
+// Vol index cell
+string volLevelStr = na(volClose)  ? "—" : str.tostring(volClose, "0.0")
+string volSlope    = volFalling ? "▼" : volRising ? "▲" : "►"
+string volChgStr   = na(volChgPct) ? "" :
+     " " + (volChgPct >= 0 ? "+" : "") + str.tostring(volChgPct, "0.0") + "%"
+string volCell     = volLevelStr + " " + volSlope + volChgStr
+// Note: falling vol = bullish for equities, so color inverts
+color  volClr      = volFalling ? C_BULL : volRising ? C_BEAR : C_NEUTRAL
+
+// Timeframe display string
+string tfStr = (
+     tfMin <  1    ? str.tostring(tfMin * 60, "0") + "s" :
+     tfMin <  60   ? str.tostring(tfMin, "0")      + "m" :
+     tfMin <  1440 ? str.tostring(tfMin / 60, "0") + "h" :
+     "D")
+
+// Day change %
+string dayChgStr = (dayChgPct >= 0 ? "+" : "") + str.tostring(dayChgPct, "0.00") + "%"
+color  dayClr    = dayChgPct >= 0 ? C_BULL : C_BEAR
+
+// Score cell
+string scoreStr = (biasScore > 0 ? "+" : "") + str.tostring(biasScore) + "/" + str.tostring(maxScore)
+
+// ============================================================================
+// PLOTS (minimal overlay — mobile clutter discipline)
+// ============================================================================
+
+plot(i_showEMAs ? emaFast : na, "EMA Fast", C_EMA_FAST, 1)
+plot(i_showEMAs ? emaMid  : na, "EMA Mid",  C_EMA_MID,  1)
+plot(i_showEMAs ? emaSlow : na, "EMA Slow", C_EMA_SLOW, 2)
+
+plot(i_showVWAP and intradayChart ? vwapVal : na, "VWAP", C_VWAP, 1)
+
+plot(i_showPDLvls ? pdh : na, "PDH", C_PDH, 1, plot.style_linebr)
+plot(i_showPDLvls ? pdl : na, "PDL", C_PDL, 1, plot.style_linebr)
+plot(i_showPDLvls ? pdc : na, "PDC", C_PDC, 1, plot.style_linebr)
+
+plot(i_showHLLvls ? sessHOD : na, "HOD", C_HOD, 1, plot.style_linebr)
+plot(i_showHLLvls ? sessLOD : na, "LOD", C_LOD, 1, plot.style_linebr)
+
+// Optional bias background tint
+bgcolor(i_showBiasBG and isStrongBull ? color.new(C_BULL, 92) :
+        i_showBiasBG and isStrongBear ? color.new(C_BEAR, 92) : na,
+        title="Bias Tint")
+
+// ============================================================================
+// DASHBOARD — 2 columns, 8 rows, rows 0-1 merged full-width
+// ============================================================================
+if barstate.islast and i_showDash
+    dashTblPos = i_dashPos == "Top Right"    ? position.top_right    :
+                 i_dashPos == "Top Left"     ? position.top_left     :
+                 i_dashPos == "Bottom Right" ? position.bottom_right :
+                 position.bottom_left
+
+    txtSize = i_dashSize == "Normal" ? size.normal :
+              i_dashSize == "Large"  ? size.large  :
+              size.huge
+
+    var table dash = table.new(dashTblPos, 2, 8,
+         bgcolor      = C_DASH_BG,
+         border_width = 1,
+         border_color = color.new(#FFFFFF, 75),
+         frame_width  = 2,
+         frame_color  = color.new(#FFFFFF, 55))
+
+    // --- Row 0: Header (merged) ---
+    string headerStr = "PKT SCOUT  " + syminfo.ticker + "  " + tfStr
+    table.cell(dash, 0, 0, headerStr, text_color=C_WHITE,
+         bgcolor=C_HEADER_BG, text_size=txtSize, text_halign=text.align_center)
+    table.cell(dash, 1, 0, "", bgcolor=C_HEADER_BG, text_size=txtSize)
+    table.merge_cells(dash, 0, 0, 1, 0)
+
+    // --- Row 1: BIAS BANNER (merged, full-width) ---
+    string bannerText = biasArrow + "  " + biasLabel + "  " + scoreStr
+    table.cell(dash, 0, 1, bannerText, text_color=biasTextColor,
+         bgcolor=biasBannerBg, text_size=txtSize, text_halign=text.align_center)
+    table.cell(dash, 1, 1, "", bgcolor=biasBannerBg, text_size=txtSize)
+    table.merge_cells(dash, 0, 1, 1, 1)
+
+    // --- Row 2: Price | Day % ---
+    table.cell(dash, 0, 2, str.tostring(close, format.mintick),
+         text_color=C_DASH_TEXT, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 2, dayChgStr,
+         text_color=dayClr, text_size=txtSize, text_halign=text.align_right)
+
+    // --- Row 3: VWAP distance ---
+    table.cell(dash, 0, 3, "VWAP " + vwapPosStr,
+         text_color=C_DASH_DIM, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 3, vwapDistStr,
+         text_color=vwapPosClr, text_size=txtSize, text_halign=text.align_right)
+
+    // --- Row 4: EMA stack ---
+    string emaLens = str.tostring(i_emaFast) + "/" + str.tostring(i_emaMid) + "/" + str.tostring(i_emaSlow)
+    table.cell(dash, 0, 4, "EMA " + emaLens,
+         text_color=C_DASH_DIM, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 4, emaStackStr,
+         text_color=emaStackClr, text_size=txtSize, text_halign=text.align_right)
+
+    // --- Row 5: Momentum (RSI + MACD) ---
+    table.cell(dash, 0, 5, "Momentum",
+         text_color=C_DASH_DIM, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 5, momStr,
+         text_color=momClr, text_size=txtSize, text_halign=text.align_right)
+
+    // --- Row 6: Vol index ---
+    table.cell(dash, 0, 6, volSymShort,
+         text_color=C_DASH_DIM, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 6, volCell,
+         text_color=volClr, text_size=txtSize, text_halign=text.align_right)
+
+    // --- Row 7: Level proximity ---
+    table.cell(dash, 0, 7, "Level",
+         text_color=C_DASH_DIM, text_size=txtSize, text_halign=text.align_left)
+    table.cell(dash, 1, 7, proxLabel,
+         text_color=proxColor, text_size=txtSize, text_halign=text.align_right)
+
+// ============================================================================
+// ALERTS (4 — high signal only)
+// ============================================================================
+alertcondition(ta.crossover(biasScore, i_strongThr - 0.5),
+     title   = "Pocket Scout: STRONG BULL",
+     message = "{{ticker}} {{interval}} Pocket Scout: STRONG BULL bias triggered")
+
+alertcondition(ta.crossunder(biasScore, -(i_strongThr - 0.5)),
+     title   = "Pocket Scout: STRONG BEAR",
+     message = "{{ticker}} {{interval}} Pocket Scout: STRONG BEAR bias triggered")
+
+alertcondition(ta.crossover(close, pdh),
+     title   = "Pocket Scout: Crossed PDH",
+     message = "{{ticker}} {{interval}} Pocket Scout: Price crossed above Prior Day High")
+
+alertcondition(ta.crossunder(close, pdl),
+     title   = "Pocket Scout: Crossed PDL",
+     message = "{{ticker}} {{interval}} Pocket Scout: Price crossed below Prior Day Low")
